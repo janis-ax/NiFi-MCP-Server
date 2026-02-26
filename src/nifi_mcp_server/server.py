@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from typing import Any, Dict, Optional
 
 import anyio
@@ -44,6 +45,18 @@ def _redact_sensitive(obj: Any, max_items: int = 200) -> Any:
 	return obj
 
 
+def _auth_log(config: ServerConfig, mode: str) -> None:
+	"""Log which auth mode is active (stderr, no secrets) so users can verify env is used."""
+	base = (config.nifi_api_base or config.knox_gateway_url or "")[:60]
+	extra = f" user={config.nifi_user!r}" if mode == "basic" and config.nifi_user else ""
+	msg = f"nifi-mcp-server: auth={mode}{extra} base={base!r}\n"
+	try:
+		sys.stderr.write(msg)
+		sys.stderr.flush()
+	except Exception:
+		pass
+
+
 def build_client(config: ServerConfig) -> NiFiClient:
 	verify = config.build_verify()
 	nifi_base = config.build_nifi_base()
@@ -68,12 +81,15 @@ def build_client(config: ServerConfig) -> NiFiClient:
 		)
 		session = auth.build_session()
 		proxy_context_path = config.proxy_context_path
+		_auth_log(config, "knox")
 	else:
 		# Open Source NiFi: Basic auth or no auth
 		if config.nifi_user and config.nifi_password:
 			session = build_basic_auth_session(config.nifi_user, config.nifi_password, verify)
+			_auth_log(config, "basic")
 		else:
 			session = build_no_auth_session(verify)
+			_auth_log(config, "none")
 		proxy_context_path = None  # No CDP proxy for direct NiFi
 
 	return NiFiClient(
