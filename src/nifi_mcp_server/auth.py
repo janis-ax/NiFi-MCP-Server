@@ -6,6 +6,29 @@ from typing import Optional
 import requests
 
 
+def build_basic_auth_session(
+	user: str,
+	password: str,
+	verify: bool | str = True,
+) -> requests.Session:
+	"""Build a requests Session with HTTP Basic auth for Open Source NiFi.
+	Use when connecting directly to NiFi (no Knox). NiFi accepts Basic auth
+	when configured with login (e.g. LDAP, file-based, single-user)."""
+	session = requests.Session()
+	session.auth = (user, password)
+	session.verify = verify
+	session.headers["X-Requested-By"] = "nifi-mcp-server"
+	return session
+
+
+def build_no_auth_session(verify: bool | str = True) -> requests.Session:
+	"""Build a requests Session with no auth (e.g. dev NiFi without login)."""
+	session = requests.Session()
+	session.verify = verify
+	session.headers["X-Requested-By"] = "nifi-mcp-server"
+	return session
+
+
 class KnoxAuthFactory:
 	def __init__(
 		self,

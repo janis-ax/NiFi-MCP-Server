@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 import anyio
 
 from .config import ServerConfig
-from .auth import KnoxAuthFactory
+from .auth import KnoxAuthFactory, build_basic_auth_session, build_no_auth_session
 from .client import NiFiClient
 from .flow_builder import analyze_flow_request
 from .best_practices import NiFiBestPractices, SmartFlowBuilder
@@ -47,22 +47,40 @@ def _redact_sensitive(obj: Any, max_items: int = 200) -> Any:
 def build_client(config: ServerConfig) -> NiFiClient:
 	verify = config.build_verify()
 	nifi_base = config.build_nifi_base()
-	auth = KnoxAuthFactory(
-		gateway_url=config.knox_gateway_url,
-		token=config.knox_token,
-		cookie=config.knox_cookie,
-		user=config.knox_user,
-		password=config.knox_password,
-		token_endpoint=config.knox_token_endpoint,
-		passcode_token=config.knox_passcode_token,
-		verify=verify,
+
+	# Prefer Knox when any Knox credential is set (CDP / Knox gateway)
+	use_knox = bool(
+		config.knox_token
+		or config.knox_cookie
+		or config.knox_passcode_token
+		or (config.knox_user and config.knox_token_endpoint)
 	)
-	session = auth.build_session()
+	if use_knox:
+		auth = KnoxAuthFactory(
+			gateway_url=config.knox_gateway_url or "",
+			token=config.knox_token,
+			cookie=config.knox_cookie,
+			user=config.knox_user,
+			password=config.knox_password,
+			token_endpoint=config.knox_token_endpoint,
+			passcode_token=config.knox_passcode_token,
+			verify=verify,
+		)
+		session = auth.build_session()
+		proxy_context_path = config.proxy_context_path
+	else:
+		# Open Source NiFi: Basic auth or no auth
+		if config.nifi_user and config.nifi_password:
+			session = build_basic_auth_session(config.nifi_user, config.nifi_password, verify)
+		else:
+			session = build_no_auth_session(verify)
+		proxy_context_path = None  # No CDP proxy for direct NiFi
+
 	return NiFiClient(
 		nifi_base,
 		session,
 		timeout_seconds=config.timeout_seconds,
-		proxy_context_path=config.proxy_context_path,
+		proxy_context_path=proxy_context_path,
 	)
 
 
@@ -750,8 +768,10 @@ async def run_stdio() -> None:
 
 def main() -> None:
 	transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
+	# FastMCP: stdio, sse, streamable-http. Cursor and many clients use SSE at /sse.
+	if transport == "http":
+		transport = "sse"
 	if transport != "stdio":
-		# Defer to FastMCP synchronous run helper for other transports when added
 		config = ServerConfig()
 		nifi = build_client(config)
 		server = create_server(nifi, readonly=config.readonly)

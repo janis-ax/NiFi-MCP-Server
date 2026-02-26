@@ -1,6 +1,9 @@
-# NiFi MCP Server (via Knox)
+# NiFi MCP Server
 
-Model Context Protocol server providing selectable read and write access to Apache NiFi via Apache Knox.
+Model Context Protocol server providing selectable read and write access to Apache NiFi.
+
+- **CDP / Knox**: Use Apache Knox (JWT, cookie, passcode) for NiFi behind Cloudera Data Platform.
+- **Open Source NiFi**: Use HTTP Basic auth (`NIFI_USER` / `NIFI_PASSWORD`) for standalone Apache NiFi.
 
 **Works with both NiFi 1.x and 2.x** - automatic version detection and adaptation.
 
@@ -153,22 +156,64 @@ All configuration is done via environment variables:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `NIFI_API_BASE` | Yes* | Full NiFi API URL (e.g., `https://host/nifi-2-dh/cdp-proxy/nifi-app/nifi-api`) |
-| `KNOX_TOKEN` | Yes* | Knox JWT token for authentication |
+| `NIFI_API_BASE` | Yes* | Full NiFi API URL (see examples below for CDP vs Open Source) |
+| `KNOX_TOKEN` | No** | Knox JWT token (CDP/Knox deployments) |
 | `KNOX_GATEWAY_URL` | No | Knox gateway URL (alternative to `NIFI_API_BASE`) |
-| `KNOX_COOKIE` | No | Alternative: provide full cookie string instead of token |
-| `KNOX_PASSCODE_TOKEN` | No | Alternative: Knox passcode token (auto-exchanged for JWT) |
+| `KNOX_COOKIE` | No | Alternative: full cookie string instead of token |
+| `KNOX_PASSCODE_TOKEN` | No | Knox passcode token (auto-exchanged for JWT) |
+| `NIFI_USER` | No** | NiFi username for **Open Source NiFi** (HTTP Basic auth) |
+| `NIFI_PASSWORD` | No** | NiFi password for **Open Source NiFi** (HTTP Basic auth) |
 | `NIFI_READONLY` | No | Read-only mode (default: `true`) |
 | `KNOX_VERIFY_SSL` | No | Verify SSL certificates (default: `true`) |
 | `KNOX_CA_BUNDLE` | No | Path to CA certificate bundle |
+| `MCP_TRANSPORT` | No | Transport: `stdio` (default), `http`, or `sse` |
+| `FASTMCP_HOST` | No | For HTTP/SSE: bind address (default: `127.0.0.1`) |
+| `FASTMCP_PORT` | No | For HTTP/SSE: port (default: `8000`) |
 
-\* Either `NIFI_API_BASE` or `KNOX_GATEWAY_URL` is required
+\* Either `NIFI_API_BASE` or `KNOX_GATEWAY_URL` is required.  
+\** Use either Knox auth (`KNOX_TOKEN` etc.) **or** Open Source NiFi auth (`NIFI_USER` + `NIFI_PASSWORD`). If neither is set, requests are sent without auth (only works if NiFi allows anonymous access).
 
 
-For the NIFI_API_BASE, form using the url from Knox (less `-token`), and add the postfix `/nifi-app/nifi-api`
-So, `https://nifi-2-dh-management0.yourdomain.cloudera.site/nifi-2-dh/cdp-proxy-token` becomes `https://nifi-2-dh-management0.yourdomain.cloudera.site/nifi-2-dh/cdp-proxy/nifi-app/nifi-api`
+**CDP NiFi** – For `NIFI_API_BASE`, use the Knox URL (without `-token`) and add `/nifi-app/nifi-api`.  
+Example: `https://nifi-2-dh-management0.yourdomain.cloudera.site/nifi-2-dh/cdp-proxy-token` → `https://nifi-2-dh-management0.yourdomain.cloudera.site/nifi-2-dh/cdp-proxy/nifi-app/nifi-api`
 
 Get Knox Token from the Flow Management Datahub Knox instance:
+
+### Open Source NiFi (standalone Apache NiFi)
+
+No Knox – point directly at the NiFi API and use HTTP Basic auth:
+
+1. **NiFi API URL**: `https://<host>:8443/nifi-api` (or your NiFi base URL + `/nifi-api`).
+2. **Auth**: Set `NIFI_USER` and `NIFI_PASSWORD` to a NiFi user that has API access (e.g. LDAP or file-based login).
+
+Example for Claude Desktop:
+
+```json
+"env": {
+  "MCP_TRANSPORT": "stdio",
+  "NIFI_API_BASE": "https://nifi.example.com:8443/nifi-api",
+  "NIFI_USER": "nifi_admin",
+  "NIFI_PASSWORD": "your_password",
+  "NIFI_READONLY": "true"
+}
+```
+
+### HTTP / SSE transport (run server without MCP client spawning it)
+
+By default the server uses **stdio** (the MCP client starts the process and talks via stdin/stdout). To run the server as an HTTP process and connect clients (e.g. **Cursor**) to it:
+
+1. Set **`MCP_TRANSPORT=http`** (or `sse`). `http` is implemented as **SSE** so that clients like Cursor find the `/sse` endpoint.
+2. Optionally set **`FASTMCP_HOST`** and **`FASTMCP_PORT`** (default: `127.0.0.1:8000`).
+
+Example – start server and listen on port 3030:
+
+```bash
+MCP_TRANSPORT=http FASTMCP_PORT=3030 \
+NIFI_API_BASE=https://nifi:8443/nifi-api NIFI_USER=nifi NIFI_PASSWORD=secret \
+uv run run-server
+```
+
+Then point your MCP client at the **SSE URL**, e.g. **`http://127.0.0.1:3030/sse`** (Cursor and similar clients use the `/sse` endpoint). The `GET /.well-known/oauth-authorization-server` 404 is normal when no OAuth is configured.
 
 ![](/screenshots/knox-token-generation.png)
 

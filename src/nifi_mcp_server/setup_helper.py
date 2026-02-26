@@ -43,6 +43,17 @@ class SetupGuide:
                     "example": "password123",
                     "required": False,
                     "sensitive": True
+                },
+                "NIFI_USER": {
+                    "description": "NiFi username (Open Source NiFi HTTP Basic auth)",
+                    "example": "nifi_admin",
+                    "required": False
+                },
+                "NIFI_PASSWORD": {
+                    "description": "NiFi password (Open Source NiFi HTTP Basic auth)",
+                    "example": "password123",
+                    "required": False,
+                    "sensitive": True
                 }
             },
             "security": {
@@ -82,18 +93,23 @@ class SetupGuide:
         elif not nifi_api_base.startswith("http"):
             errors.append("❌ NIFI_API_BASE must start with 'http://' or 'https://'")
         
-        # Check authentication (at least one method)
+        # Check authentication (at least one method: Knox or Open Source Basic)
         knox_token = os.getenv("KNOX_TOKEN")
         knox_cookie = os.getenv("KNOX_COOKIE")
+        knox_passcode = os.getenv("KNOX_PASSCODE_TOKEN")
         knox_user = os.getenv("KNOX_USER")
         knox_password = os.getenv("KNOX_PASSWORD")
+        nifi_user = os.getenv("NIFI_USER")
+        nifi_password = os.getenv("NIFI_PASSWORD")
         
-        has_auth = any([knox_token, knox_cookie, (knox_user and knox_password)])
+        has_knox = any([knox_token, knox_cookie, knox_passcode, (knox_user and os.getenv("KNOX_TOKEN_ENDPOINT"))])
+        has_basic = bool(nifi_user and nifi_password)
+        has_auth = has_knox or has_basic
         
         if not has_auth:
-            warnings.append("⚠️  No authentication configured (requests will fail if auth is required)")
-            warnings.append("   Recommended: Set KNOX_TOKEN for CDP NiFi")
-            warnings.append("   Example: export KNOX_TOKEN='eyJqa3UiOi...'")
+            warnings.append("⚠️  No authentication configured (requests will fail if NiFi requires login)")
+            warnings.append("   For CDP NiFi: set KNOX_TOKEN (or KNOX_COOKIE)")
+            warnings.append("   For Open Source NiFi: set NIFI_USER and NIFI_PASSWORD")
         
         # Check SSL verification
         verify_ssl = os.getenv("KNOX_VERIFY_SSL", "true").lower()
@@ -139,9 +155,13 @@ class SetupGuide:
    Option B - Knox Cookie:
    export KNOX_COOKIE="hadoop-jwt=eyJqa3UiOi..."
    
-   Option C - Basic Auth:
+   Option C - Knox Basic Auth (token exchange):
    export KNOX_USER="your_username"
    export KNOX_PASSWORD="your_password"
+   
+   Option D - Open Source NiFi (HTTP Basic auth):
+   export NIFI_USER="nifi_admin"
+   export NIFI_PASSWORD="your_password"
 
 3. Permissions (Optional)
    
@@ -173,6 +193,22 @@ export NIFI_API_BASE="https://nifi-2-dh-management0.my-cluster.com/nifi-2-dh/cdp
 export KNOX_TOKEN="eyJqa3UiOi..."
 
 # 3. Enable write operations (for building flows)
+export NIFI_READONLY="false"
+
+# 4. Verify configuration
+python -c "from nifi_mcp_server.setup_helper import SetupGuide; SetupGuide.check_and_report()"
+
+⚡ QUICK START FOR OPEN SOURCE NIFI
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# 1. Set NiFi API URL (no Knox path)
+export NIFI_API_BASE="https://nifi-host:8443/nifi-api"
+
+# 2. Set NiFi login (HTTP Basic auth)
+export NIFI_USER="nifi_admin"
+export NIFI_PASSWORD="your_password"
+
+# 3. Optional: enable write operations
 export NIFI_READONLY="false"
 
 # 4. Verify configuration
@@ -217,11 +253,13 @@ python -c "from nifi_mcp_server.setup_helper import SetupGuide; SetupGuide.check
             print(f"   NIFI_READONLY: {os.getenv('NIFI_READONLY', 'true')}")
             
             if os.getenv("KNOX_TOKEN"):
-                print(f"   Authentication: Knox JWT Token (configured)")
+                print(f"   Authentication: Knox JWT Token (CDP)")
             elif os.getenv("KNOX_COOKIE"):
-                print(f"   Authentication: Knox Cookie (configured)")
+                print(f"   Authentication: Knox Cookie (CDP)")
+            elif os.getenv("NIFI_USER"):
+                print(f"   Authentication: HTTP Basic (Open Source NiFi, user: {os.getenv('NIFI_USER')})")
             elif os.getenv("KNOX_USER"):
-                print(f"   Authentication: Basic Auth (user: {os.getenv('KNOX_USER')})")
+                print(f"   Authentication: Knox Basic (user: {os.getenv('KNOX_USER')})")
             else:
                 print(f"   Authentication: None")
             print()
@@ -253,8 +291,9 @@ The NiFi MCP Server requires configuration before use.
 1. Set your NiFi API base URL:
    export NIFI_API_BASE="https://<your-nifi-host>/nifi-api"
 
-2. Set authentication (Knox token recommended for CDP):
-   export KNOX_TOKEN="<your-jwt-token>"
+2. Set authentication:
+   CDP/Knox:  export KNOX_TOKEN="<your-jwt-token>"
+   Open Source NiFi:  export NIFI_USER="user" NIFI_PASSWORD="pass"
 
 3. Enable write operations (if you want to build flows):
    export NIFI_READONLY="false"
@@ -264,6 +303,14 @@ The NiFi MCP Server requires configuration before use.
 
 export NIFI_API_BASE="https://nifi-2-dh-management0.my-cluster.com/nifi-2-dh/cdp-proxy/nifi-app/nifi-api"
 export KNOX_TOKEN="eyJqa3UiOi..."
+export NIFI_READONLY="false"
+
+💡 QUICK EXAMPLE FOR OPEN SOURCE NIFI:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+export NIFI_API_BASE="https://nifi-host:8443/nifi-api"
+export NIFI_USER="nifi_admin"
+export NIFI_PASSWORD="your_password"
 export NIFI_READONLY="false"
 
 📖 For detailed setup instructions:
