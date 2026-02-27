@@ -57,6 +57,16 @@ class SetupGuide:
                 }
             },
             "security": {
+                "NIFI_VERIFY_SSL": {
+                    "description": "Set to false/0 to disable SSL verification (e.g. self-signed NiFi); overrides KNOX_VERIFY_SSL",
+                    "example": "false",
+                    "required": False
+                },
+                "NIFI_CA_BUNDLE": {
+                    "description": "Path to CA or certificate file for NiFi (e.g. self-signed). Optional if NIFI_VERIFY_SSL=false.",
+                    "example": "/path/to/ca.pem",
+                    "required": False
+                },
                 "KNOX_VERIFY_SSL": {
                     "description": "Verify SSL certificates (true/false)",
                     "example": "true",
@@ -111,11 +121,14 @@ class SetupGuide:
             warnings.append("   For CDP NiFi: set KNOX_TOKEN (or KNOX_COOKIE)")
             warnings.append("   For Open Source NiFi: set NIFI_USER and NIFI_PASSWORD")
         
-        # Check SSL verification
-        verify_ssl = os.getenv("KNOX_VERIFY_SSL", "true").lower()
-        if verify_ssl == "false":
-            warnings.append("⚠️  SSL verification disabled (KNOX_VERIFY_SSL=false)")
+        # Check SSL verification (NIFI_VERIFY_SSL overrides KNOX_VERIFY_SSL when set)
+        verify_ssl = (os.getenv("NIFI_VERIFY_SSL") or os.getenv("KNOX_VERIFY_SSL", "true")).lower()
+        nifi_ca = os.getenv("NIFI_CA_BUNDLE")
+        if verify_ssl in ("0", "false", "no"):
+            warnings.append("⚠️  SSL verification disabled (NIFI_VERIFY_SSL or KNOX_VERIFY_SSL=false)")
             warnings.append("   This is insecure for production use")
+        elif nifi_ca:
+            warnings.append("ℹ️  Using NIFI_CA_BUNDLE for NiFi TLS: " + nifi_ca)
         
         # Check readonly mode
         readonly = os.getenv("NIFI_READONLY", "true").lower()
@@ -257,7 +270,7 @@ python -c "from nifi_mcp_server.setup_helper import SetupGuide; SetupGuide.check
             elif os.getenv("KNOX_COOKIE"):
                 print(f"   Authentication: Knox Cookie (CDP)")
             elif os.getenv("NIFI_USER"):
-                print(f"   Authentication: HTTP Basic (Open Source NiFi, user: {os.getenv('NIFI_USER')})")
+                print(f"   Authentication: NiFi token login (Open Source NiFi, user: {os.getenv('NIFI_USER')})")
             elif os.getenv("KNOX_USER"):
                 print(f"   Authentication: Knox Basic (user: {os.getenv('KNOX_USER')})")
             else:

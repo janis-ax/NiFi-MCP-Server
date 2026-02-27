@@ -5,13 +5,13 @@ Model Context Protocol server providing selectable read and write access to Apac
 - **CDP / Knox**: Use Apache Knox (JWT, cookie, passcode) for NiFi behind Cloudera Data Platform.
 - **Open Source NiFi**: Use HTTP Basic auth (`NIFI_USER` / `NIFI_PASSWORD`) for standalone Apache NiFi.
 
-**Works with both NiFi 1.x and 2.x** - automatic version detection and adaptation.
+**Requires NiFi 2.x** - older NiFi 1.x is not supported.
 
 ![](/screenshots/Nifi-meet-mcp.png)
 
 ## Features
 
-- **Automatic version detection** - Detects NiFi 1.x vs 2.x and adapts behavior
+- **NiFi 2.x required** - Version check on first API call; NiFi 1.x will be rejected with a clear error
 - **Knox authentication** - Supports Bearer tokens, cookies, and passcode tokens for CDP deployments
 - **Read-only by default** - Safe exploration of NiFi flows and configuration
 - **Intelligent flow building** - Pattern recognition and requirements gathering for complex flows
@@ -164,8 +164,11 @@ All configuration is done via environment variables:
 | `NIFI_USER` | No** | NiFi username for **Open Source NiFi** (HTTP Basic auth) |
 | `NIFI_PASSWORD` | No** | NiFi password for **Open Source NiFi** (HTTP Basic auth) |
 | `NIFI_READONLY` | No | Read-only mode (default: `true`) |
-| `KNOX_VERIFY_SSL` | No | Verify SSL certificates (default: `true`) |
-| `KNOX_CA_BUNDLE` | No | Path to CA certificate bundle |
+| `NIFI_VERIFY_SSL` | No | Set to `false` or `0` to **disable SSL verification** (e.g. for self-signed NiFi); applies to all NiFi/Knox requests |
+| `NIFI_CA_BUNDLE` | No | Path to **CA certificate file or directory** for NiFi (e.g. self-signed). If set, this is used instead of system CAs. |
+| `KNOX_VERIFY_SSL` | No | Verify SSL certificates (default: `true`); overridden by `NIFI_VERIFY_SSL` when set |
+| `KNOX_CA_BUNDLE` | No | Path to CA certificate bundle (Knox/CDP) |
+| `LOG_LEVEL` | No | Logging level: `DEBUG`, `INFO`, `WARNING`, `ERROR` (default: `INFO`) |
 | `MCP_TRANSPORT` | No | Transport: `stdio` (default), `http`, or `sse` |
 | `FASTMCP_HOST` | No | For HTTP/SSE: bind address (default: `127.0.0.1`) |
 | `FASTMCP_PORT` | No | For HTTP/SSE: port (default: `8000`) |
@@ -181,10 +184,11 @@ Get Knox Token from the Flow Management Datahub Knox instance:
 
 ### Open Source NiFi (standalone Apache NiFi)
 
-No Knox – point directly at the NiFi API and use HTTP Basic auth:
+No Knox – point directly at the NiFi API. The server uses **token login** (same as nipyapi): it calls **POST /access/token** with your credentials to get a JWT, then uses **Bearer** token for all API requests.
 
 1. **NiFi API URL**: `https://<host>:8443/nifi-api` (or your NiFi base URL + `/nifi-api`).
-2. **Auth**: Set `NIFI_USER` and `NIFI_PASSWORD` to a NiFi user that has API access (e.g. LDAP or file-based login).
+2. **Auth**: Set `NIFI_USER` and `NIFI_PASSWORD` to a NiFi user that can log in (single-user, LDAP, etc.). The server obtains a token at startup and uses it for all requests.
+3. **Self-signed / SSL**: NiFi often uses self-signed certificates. Either set `NIFI_VERIFY_SSL=false` to disable verification, or set `NIFI_CA_BUNDLE` to the path of your CA or server certificate file (e.g. `NIFI_CA_BUNDLE=/path/to/ca.pem`).
 
 Example for Claude Desktop:
 
@@ -214,6 +218,27 @@ uv run run-server
 ```
 
 Then point your MCP client at the **SSE URL**, e.g. **`http://127.0.0.1:3030/sse`** (Cursor and similar clients use the `/sse` endpoint). The `GET /.well-known/oauth-authorization-server` 404 is normal when no OAuth is configured.
+
+```json
+{
+  "mcpServers": {
+    "nifi-mcp-server": {
+      "command": "uv",
+      "args": ["run", "--project", "/path/to/NiFi-MCP-Server", "run-server"],
+      "env": {
+        "MCP_TRANSPORT": "stdio",
+        "NIFI_API_BASE": "https://nifi-host:8443/nifi-api",
+        "NIFI_USER": "nifi",
+        "NIFI_PASSWORD": "ordix-sandbox",
+        "NIFI_READONLY": "true",
+        "NIFI_VERIFY_SSL": "false"
+      }
+    }
+  }
+}
+```
+
+Use the same user/password as in your NiFi setup (e.g. `docker-compose` or `authorizers.xml`). Restart the MCP server / IDE after changing the config.
 
 ![](/screenshots/knox-token-generation.png)
 

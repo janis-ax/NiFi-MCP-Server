@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from typing import Any, Dict, Optional
 
 import anyio
 
 from .config import ServerConfig
-from .auth import KnoxAuthFactory, build_basic_auth_session, build_no_auth_session
+from .logging_config import configure_logging, get_logger
+from .auth import KnoxAuthFactory, build_nifi_token_session, build_no_auth_session
 from .client import NiFiClient
+
+log = get_logger("server")
 from .flow_builder import analyze_flow_request
 from .best_practices import NiFiBestPractices, SmartFlowBuilder
 from .setup_helper import SetupGuide
@@ -46,15 +48,10 @@ def _redact_sensitive(obj: Any, max_items: int = 200) -> Any:
 
 
 def _auth_log(config: ServerConfig, mode: str) -> None:
-	"""Log which auth mode is active (stderr, no secrets) so users can verify env is used."""
+	"""Log which auth mode is active (no secrets)."""
 	base = (config.nifi_api_base or config.knox_gateway_url or "")[:60]
-	extra = f" user={config.nifi_user!r}" if mode == "basic" and config.nifi_user else ""
-	msg = f"nifi-mcp-server: auth={mode}{extra} base={base!r}\n"
-	try:
-		sys.stderr.write(msg)
-		sys.stderr.flush()
-	except Exception:
-		pass
+	extra = f" user={config.nifi_user!r}" if mode in ("basic", "token") and config.nifi_user else ""
+	log.info("auth=%s%s base=%r", mode, extra, base)
 
 
 def build_client(config: ServerConfig) -> NiFiClient:
@@ -83,10 +80,10 @@ def build_client(config: ServerConfig) -> NiFiClient:
 		proxy_context_path = config.proxy_context_path
 		_auth_log(config, "knox")
 	else:
-		# Open Source NiFi: Basic auth or no auth
+		# Open Source NiFi: token login (POST /access/token then Bearer) or no auth
 		if config.nifi_user and config.nifi_password:
-			session = build_basic_auth_session(config.nifi_user, config.nifi_password, verify)
-			_auth_log(config, "basic")
+			session = build_nifi_token_session(nifi_base, config.nifi_user, config.nifi_password, verify)
+			_auth_log(config, "token")
 		else:
 			session = build_no_auth_session(verify)
 			_auth_log(config, "none")
@@ -783,6 +780,7 @@ async def run_stdio() -> None:
 
 
 def main() -> None:
+	configure_logging()
 	transport = os.getenv("MCP_TRANSPORT", "stdio").lower()
 	# FastMCP: stdio, sse, streamable-http. Cursor and many clients use SSE at /sse.
 	if transport == "http":

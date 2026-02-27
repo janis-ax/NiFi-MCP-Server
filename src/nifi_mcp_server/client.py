@@ -6,6 +6,15 @@ from functools import lru_cache
 import requests
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+try:
+	from .logging_config import get_logger
+except ImportError:
+	def get_logger(name: str):
+		import logging
+		return logging.getLogger(f"nifi_mcp_server.{name}")
+
+_log = get_logger("client")
+
 
 class NiFiError(Exception):
 	"""Base exception for NiFi API errors with detailed error information."""
@@ -47,7 +56,7 @@ class NiFiClient:
 	def _get(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 		resp = self.session.get(self._url(path), params=params, timeout=self.timeout)
 		if not resp.ok:
-			# Capture detailed error information from NiFi API
+			_log.debug("GET %s failed: %s %s", path, resp.status_code, resp.reason)
 			error_body = resp.text if resp.text else "(empty response)"
 			raise NiFiError(
 				f"GET {path} failed: {resp.reason}",
@@ -65,7 +74,7 @@ class NiFiClient:
 	def _put(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
 		resp = self.session.put(self._url(path), json=data, timeout=self.timeout)
 		if not resp.ok:
-			# Capture detailed error information from NiFi API
+			_log.debug("PUT %s failed: %s %s", path, resp.status_code, resp.reason)
 			error_body = resp.text if resp.text else "(empty response)"
 			raise NiFiError(
 				f"PUT {path} failed: {resp.reason}",
@@ -83,7 +92,7 @@ class NiFiClient:
 	def _post(self, path: str, data: Dict[str, Any]) -> Dict[str, Any]:
 		resp = self.session.post(self._url(path), json=data, timeout=self.timeout)
 		if not resp.ok:
-			# Capture detailed error information from NiFi API
+			_log.debug("POST %s failed: %s %s", path, resp.status_code, resp.reason)
 			error_body = resp.text if resp.text else "(empty response)"
 			raise NiFiError(
 				f"POST {path} failed: {resp.reason}",
@@ -101,7 +110,7 @@ class NiFiClient:
 	def _delete(self, path: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
 		resp = self.session.delete(self._url(path), params=params, timeout=self.timeout)
 		if not resp.ok:
-			# Capture detailed error information from NiFi API
+			_log.debug("DELETE %s failed: %s %s", path, resp.status_code, resp.reason)
 			error_body = resp.text if resp.text else "(empty response)"
 			raise NiFiError(
 				f"DELETE {path} failed: {resp.reason}",
@@ -115,16 +124,22 @@ class NiFiClient:
 		return self._get("flow/about")
 
 	def get_version_tuple(self) -> Tuple[int, int, int]:
-		"""Get NiFi version as (major, minor, patch) tuple for version detection."""
+		"""Get NiFi version as (major, minor, patch) tuple for version detection. Requires NiFi 2.x."""
 		if self._version_info is None:
 			try:
 				about = self.get_version_info()
 				version_str = about.get("about", {}).get("version", "1.0.0")
-				# Parse version string like "2.0.0" or "1.23.2"
 				parts = version_str.split(".")[:3]
 				self._version_info = tuple(int(p) for p in parts)
+				major, minor, patch = self._version_info
+				if major < 2:
+					_log.error("NiFi 2.x is required; detected version %s.%s.%s. Please upgrade your NiFi instance.", major, minor, patch)
+					raise ValueError(
+						f"NiFi 2.x is required; detected version {major}.{minor}.{patch}. Please upgrade your NiFi instance."
+					)
+			except ValueError:
+				raise
 			except Exception:
-				# Default to 1.x if detection fails
 				self._version_info = (1, 0, 0)
 		return self._version_info
 
