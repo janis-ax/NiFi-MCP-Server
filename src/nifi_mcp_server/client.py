@@ -367,7 +367,90 @@ class NiFiClient:
 			f"output-ports/{port_id}",
 			params={"version": version, "disconnectedNodeAcknowledged": str(disconnected_ack).lower()}
 		)
-	
+
+	# ===== Labels (canvas labels for documentation) =====
+
+	def get_labels(self, pg_id: str) -> Dict[str, Any]:
+		"""Get all labels in a process group (read-only)."""
+		return self._get(f"process-groups/{pg_id}/labels")
+
+	def get_label(self, label_id: str) -> Dict[str, Any]:
+		"""Get a single label by ID (read-only)."""
+		return self._get(f"labels/{label_id}")
+
+	def create_label(
+		self,
+		pg_id: str,
+		label_text: str,
+		position_x: float = 0.0,
+		position_y: float = 0.0,
+		width: Optional[float] = None,
+		height: Optional[float] = None,
+		style: Optional[Dict[str, str]] = None
+	) -> Dict[str, Any]:
+		"""Create a label in a process group. Requires NIFI_READONLY=false.
+		Labels are canvas elements for documentation (e.g. section titles, notes).
+		"""
+		component: Dict[str, Any] = {
+			"label": label_text,
+			"position": {"x": position_x, "y": position_y}
+		}
+		if width is not None:
+			component["width"] = width
+		if height is not None:
+			component["height"] = height
+		if style:
+			component["style"] = style
+		return self._post(
+			f"process-groups/{pg_id}/labels",
+			{
+				"revision": {"version": 0},
+				"component": component
+			}
+		)
+
+	def update_label(
+		self,
+		label_id: str,
+		version: int,
+		label_text: Optional[str] = None,
+		position_x: Optional[float] = None,
+		position_y: Optional[float] = None,
+		width: Optional[float] = None,
+		height: Optional[float] = None,
+		style: Optional[Dict[str, str]] = None
+	) -> Dict[str, Any]:
+		"""Update a label (text, position, size, style). Requires NIFI_READONLY=false."""
+		label_data = self.get_label(label_id)
+		component = dict(label_data.get("component", {}))
+		component["id"] = label_id
+		if label_text is not None:
+			component["label"] = label_text
+		if position_x is not None or position_y is not None:
+			pos = component.get("position", {})
+			if position_x is not None:
+				pos["x"] = position_x
+			if position_y is not None:
+				pos["y"] = position_y
+			component["position"] = pos
+		if width is not None:
+			component["width"] = width
+		if height is not None:
+			component["height"] = height
+		if style is not None:
+			component["style"] = style
+		return self._put(
+			f"labels/{label_id}",
+			{"revision": {"version": version}, "component": component}
+		)
+
+	def delete_label(self, label_id: str, version: int, disconnected_ack: bool = False) -> Dict[str, Any]:
+		"""Delete a label. Requires NIFI_READONLY=false."""
+		return self._delete(
+			f"labels/{label_id}",
+			params={"version": version, "disconnectedNodeAcknowledged": str(disconnected_ack).lower()}
+		)
+
 	def start_input_port(self, port_id: str, version: int) -> Dict[str, Any]:
 		"""Start an input port to enable data flow. Requires NIFI_READONLY=false."""
 		return self._put(

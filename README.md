@@ -15,7 +15,7 @@ Model Context Protocol server providing selectable read and write access to Apac
 - **Knox authentication** - Supports Bearer tokens, cookies, and passcode tokens for CDP deployments
 - **Read-only by default** - Safe exploration of NiFi flows and configuration
 - **Intelligent flow building** - Pattern recognition and requirements gathering for complex flows
-- **24 read-only MCP tools** for exploring NiFi:
+- **26 read-only MCP tools** for exploring NiFi:
   - `get_nifi_version()` - Version and build information
   - `get_root_process_group()` - Root process group details
   - `list_processors(process_group_id)` - List processors in a process group
@@ -29,6 +29,8 @@ Model Context Protocol server providing selectable read and write access to Apac
   - `get_processor_details(processor_id)` - Detailed processor configuration
   - `list_input_ports(process_group_id)` - Input ports for a process group
   - `list_output_ports(process_group_id)` - Output ports for a process group
+  - `list_labels(process_group_id)` - Labels (canvas documentation elements) in a process group
+  - `get_label_details(label_id)` - Label text, position, size and style
   - `get_processor_state(processor_id)` - Quick processor state check
   - `check_connection_queue(connection_id)` - Queue size (flowfiles + bytes)
   - `get_flow_summary(process_group_id)` - Flow statistics and health overview
@@ -40,7 +42,7 @@ Model Context Protocol server providing selectable read and write access to Apac
   - `get_setup_instructions()` - Interactive setup guidance for NiFi MCP Server
   - `get_best_practices_guide()` - Best practices for building NiFi flows
   - `get_recommended_workflow(flow_type)` - Step-by-step guidance for common flow patterns
-- **42 write operations** (when `NIFI_READONLY=false`):
+- **45 write operations** (when `NIFI_READONLY=false`):
   - `start_processor(processor_id, version)` - Start a processor
   - `stop_processor(processor_id, version)` - Stop a processor
   - `create_processor(...)` - Create a new processor
@@ -64,6 +66,9 @@ Model Context Protocol server providing selectable read and write access to Apac
   - `update_output_port(port_id, version, name)` - Rename output ports
   - `delete_input_port(port_id, version)` - Remove input ports
   - `delete_output_port(port_id, version)` - Remove output ports
+  - `create_label(process_group_id, label_text, x?, y?, width?, height?)` - Create a label on the canvas
+  - `update_label(label_id, version, label_text?, x?, y?, width?, height?)` - Update label text, position or size
+  - `delete_label(label_id, version)` - Delete a label
   - `create_parameter_context(name, description, parameters)` - Create parameter contexts for environment-specific config
   - `update_parameter_context(context_id, version, ...)` - Update parameter contexts
   - `delete_parameter_context(context_id, version)` - Remove parameter contexts

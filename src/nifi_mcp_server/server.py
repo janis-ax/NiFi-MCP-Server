@@ -186,7 +186,19 @@ def create_server(nifi: NiFiClient, readonly: bool) -> FastMCP:
 		"""List output ports for a process group (read-only)."""
 		data = nifi.get_output_ports(process_group_id)
 		return _redact_sensitive(data)
-	
+
+	@app.tool()
+	async def list_labels(process_group_id: str) -> Dict[str, Any]:
+		"""List all labels in a process group (read-only). Labels are canvas elements for documentation (section titles, notes)."""
+		data = nifi.get_labels(process_group_id)
+		return _redact_sensitive(data)
+
+	@app.tool()
+	async def get_label_details(label_id: str) -> Dict[str, Any]:
+		"""Get details of a specific label including text, position, size and style (read-only)."""
+		data = nifi.get_label(label_id)
+		return _redact_sensitive(data)
+
 	@app.tool()
 	async def get_processor_state(processor_id: str) -> str:
 		"""Get just the state of a processor (RUNNING, STOPPED, DISABLED, etc.).
@@ -591,6 +603,63 @@ def create_server(nifi: NiFiClient, readonly: bool) -> FastMCP:
 		async def delete_output_port(port_id: str, version: int) -> Dict[str, Any]:
 			"""Delete an output port. **WRITE OPERATION** - Requires NIFI_READONLY=false."""
 			data = nifi.delete_output_port(port_id, version)
+			return _redact_sensitive(data)
+
+		@app.tool()
+		async def create_label(
+			process_group_id: str,
+			label_text: str,
+			position_x: float = 0.0,
+			position_y: float = 0.0,
+			width: Optional[float] = None,
+			height: Optional[float] = None
+		) -> Dict[str, Any]:
+			"""Create a label in a process group. **WRITE OPERATION** - Requires NIFI_READONLY=false.
+			
+			Labels are canvas elements for documentation (section titles, notes, descriptions).
+			
+			Args:
+			  process_group_id: The process group ID
+			  label_text: The text displayed on the label
+			  position_x: X coordinate on the canvas (default: 0.0)
+			  position_y: Y coordinate on the canvas (default: 0.0)
+			  width: Optional width in pixels (at 1:1 scale)
+			  height: Optional height in pixels (at 1:1 scale)
+			"""
+			data = nifi.create_label(
+				process_group_id, label_text, position_x, position_y,
+				width=width, height=height
+			)
+			return _redact_sensitive(data)
+
+		@app.tool()
+		async def update_label(
+			label_id: str,
+			version: int,
+			label_text: Optional[str] = None,
+			position_x: Optional[float] = None,
+			position_y: Optional[float] = None,
+			width: Optional[float] = None,
+			height: Optional[float] = None
+		) -> Dict[str, Any]:
+			"""Update a label (text, position, or size). **WRITE OPERATION** - Requires NIFI_READONLY=false.
+			
+			Provide only the fields you want to change. Use get_label_details(label_id) to get current version.
+			"""
+			data = nifi.update_label(
+				label_id, version,
+				label_text=label_text,
+				position_x=position_x,
+				position_y=position_y,
+				width=width,
+				height=height
+			)
+			return _redact_sensitive(data)
+
+		@app.tool()
+		async def delete_label(label_id: str, version: int) -> Dict[str, Any]:
+			"""Delete a label. **WRITE OPERATION** - Requires NIFI_READONLY=false."""
+			data = nifi.delete_label(label_id, version)
 			return _redact_sensitive(data)
 		
 		@app.tool()
